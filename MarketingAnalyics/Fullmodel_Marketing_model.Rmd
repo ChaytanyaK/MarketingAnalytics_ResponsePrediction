@@ -1,0 +1,185 @@
+---
+title: "Phase3_Modelling"
+author: "Chaytanya Kumar & Pape Theodore"
+date: "4/28/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(tidyverse)
+library(broom)
+library(GGally)
+library(onewaytests)
+library(lbutils)
+```
+
+
+
+```{r}
+DataSet_final <- read_csv("~/Documents/STAT_615_Regression/Regression_ Project/DataSet_final.csv")
+view(DataSet_final)
+```
+```{r}
+DataSet_final <- read.csv("~/Documents/STAT_615_Regression/Regression_ Project/DataSet_final.csv",header = T,na.strings = c("","NA"))
+class(DataSet_final$email)
+summary(DataSet_final)   #NA's replaced with Zero 
+dim(DataSet_final)
+```
+
+
+
+
+```{r}
+DataSet_final$Active3M <- as.factor(DataSet_final$Active3M)
+DataSet_final$response <- as.factor(DataSet_final$response) #ordinal values
+
+```
+
+```{r}
+library(caret)   #use for partitioning
+set.seed(1240) 
+index <- createDataPartition(DataSet_final$response,p=0.8,list=F)  #not list #randonly selected and not biased 
+index
+
+# 80% training and 20% test data
+
+#View(index)
+Master_Train <- DataSet_final[index,]  #rows and then columns
+Master_Train
+
+
+
+#dim(Master_Train)  #80 percent , 982: Observations 21: Variables
+
+Master_Test<- DataSet_final[-index,]
+dim(Master_Test)   # 20 percent , 245:Observations 21: variables 
+
+```
+
+
+
+
+
+
+
+```{r}
+Full <- glm(response~email+sms+call+n_comp+loyalty+portal+rewards+nps+n_yrs+
+                 Region+Sales2019+B1Sales2019+B1Contribution+Active3M+
+                 BuyingFrequency2019+B1BuyingFrequency+BrandEngagement,data=Master_Train,family=binomial)
+summary(Full)
+```
+
+```{r}
+#Stepwise Forward Method to align the Variables 
+
+NUll_Model <- glm(response~1,Master_Train,family = binomial) #there is no predictor 
+
+Fullstep<-step(NUll_Model,scope=list(lower=NUll_Model,upper=Full),direction="forward")
+summary(Fullstep)
+```
+
+
+#email : more the number of email more are the chances to respond 
+#sms : if we sent more sms then the probability of responding will be increased 
+#call :  more the number of calls more are the chances to respond
+#loyalty : If the ChannelPartner is loyal, he is likely to respond
+#rewards : if the reward is redeemed then the it more likely that they will not respond 
+#nps : net promoter score : more the score the probability of responding will be increased 
+#Sales2019 : more amount of Sales more likely to respond 
+##
+#Model Equation : y = bo+ b1(email) + b2(sms) + b3(calls) +b4(loyalty) +b5(rewards)+
+#                         b6(nps) + b7(n_yrs) +b8(Sales2019)
+
+#Model Equation  : 3.115e+00 + 1.397e+00(email)+ 3.623e-01(sms) + 2.351e+00(calls) + 3.589e+00(loyalty) +
+#                              (-5.480e+00 )(rewards) + 1.558e-01(nps)+
+#                       8.141e-02 (n_yrs) + (5.171e-06 )(Sales2019)
+
+
+
+
+```{r}
+#Checking for Multi-colinearity of the variables 
+
+library(car)
+vif(Fullstep)
+
+#There is no severe multicollinearity so we will keep all the viarables. 
+
+############## Main model############
+#With Reward 
+Fullstep<-glm(formula = response ~ email + rewards + loyalty + call + nps + 
+    B1Sales2019 + n_yrs + sms + Sales2019, family = binomial, 
+    data = Master_Train)
+
+summary(Fullstep)
+
+
+
+```
+
+
+
+```{r}
+#Global Hypothesis Testing 
+
+#H0 = All the variables insignificant
+#H1 = Atleast one of the variable is significant 
+
+NUll_Model <- glm(response~1,data=Master_Train,family = binomial)
+anova(Fullstep,NUll_Model,test="Chisq") 
+
+
+
+#P-value < 0.05 Reject Ho : Hence it proves that at least one of the variable is significant.
+
+```
+
+
+
+```{r}
+#Calculate Area under the curve , ROCR for traindata 
+
+
+#We also compared it without reward and found  that ROC was 72%.
+#With reward 84%
+
+library(ROCR)
+Predprob_Response <- round(fitted(Fullstep),2)
+head(Predprob_Response)
+
+Prediction_Response <- prediction(Predprob_Response,Master_Train$response)
+Performance_Response <- performance(Prediction_Response,"tpr","fpr")
+plot(Performance_Response)
+abline(0,1)
+
+
+Auc_Response <- performance(Prediction_Response,"auc")
+Auc_Response@y.values  # [1] 0.84 = 84.27%
+
+
+```
+
+
+
+```{r}
+#Validating the Model on the Test Data on Test data 
+
+Predprob_Test <- round(predict(Fullstep,Master_Test,type='response'),2)
+head(Predprob_Test)
+
+Prediction_Test <- prediction(Predprob_Test,Master_Test$response)
+Performance_Test <- performance(Prediction_Test,"tpr","fpr")
+plot(Performance_Test)
+abline(0,1)
+
+Auc_Test <- performance(Prediction_Test,"auc")
+Auc_Test@y.values    #[1] 0.84 = 84.97%
+
+
+```
+
